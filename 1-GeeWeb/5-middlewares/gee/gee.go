@@ -6,21 +6,26 @@ import (
 	"strings"
 )
 
+// HandlerFunc defines the request handler used by gee
 type HandlerFunc func(*Context)
 
-type Engine struct {
-	router *router
-	*RouterGroup
-	groups []*RouterGroup //store all groups
-}
+// Engine implement the interface of ServeHTTP
+type (
+	RouterGroup struct {
+		prefix      string
+		middlewares []HandlerFunc // support middleware
+		parent      *RouterGroup  // support nesting
+		engine      *Engine       // all groups share a Engine instance
+	}
 
-type RouterGroup struct {
-	prefix      string
-	middlewares []HandlerFunc //support middleware
-	parent      *RouterGroup  //support nesting
-	engine      *Engine       //all groups share an Engine instance
-}
+	Engine struct {
+		*RouterGroup
+		router *router
+		groups []*RouterGroup // store all groups
+	}
+)
 
+// New is the constructor of gee.Engine
 func New() *Engine {
 	engine := &Engine{router: newRouter()}
 	engine.RouterGroup = &RouterGroup{engine: engine}
@@ -28,16 +33,43 @@ func New() *Engine {
 	return engine
 }
 
-func (engine *Engine) GET(pattern string, handlerFunc HandlerFunc) {
-	engine.router.addRoute("GET", pattern, handlerFunc)
+// Group is defined to create a new RouterGroup
+// remember all groups share the same Engine instance
+func (group *RouterGroup) Group(prefix string) *RouterGroup {
+	engine := group.engine
+	newGroup := &RouterGroup{
+		prefix: group.prefix + prefix,
+		parent: group,
+		engine: engine,
+	}
+	engine.groups = append(engine.groups, newGroup)
+	return newGroup
 }
 
-func (engine *Engine) POST(pattern string, handlerFunc HandlerFunc) {
-	engine.router.addRoute("POST", pattern, handlerFunc)
+// Use is defined to add middleware to the group
+func (group *RouterGroup) Use(middlewares ...HandlerFunc) {
+	group.middlewares = append(group.middlewares, middlewares...)
 }
 
-func (engine *Engine) Run(port string) (err error) {
-	return http.ListenAndServe(port, engine)
+func (group *RouterGroup) addRoute(method string, comp string, handler HandlerFunc) {
+	pattern := group.prefix + comp
+	log.Printf("Route %4s - %s", method, pattern)
+	group.engine.router.addRoute(method, pattern, handler)
+}
+
+// GET defines the method to add GET request
+func (group *RouterGroup) GET(pattern string, handler HandlerFunc) {
+	group.addRoute("GET", pattern, handler)
+}
+
+// POST defines the method to add POST request
+func (group *RouterGroup) POST(pattern string, handler HandlerFunc) {
+	group.addRoute("POST", pattern, handler)
+}
+
+// Run defines the method to start a http server
+func (engine *Engine) Run(addr string) (err error) {
+	return http.ListenAndServe(addr, engine)
 }
 
 func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -50,33 +82,4 @@ func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	c := newContext(w, req)
 	c.handlers = middlewares
 	engine.router.handle(c)
-}
-
-func (group *RouterGroup) Group(prefix string) *RouterGroup {
-	engine := group.engine
-	newGroup := &RouterGroup{
-		prefix: group.prefix + prefix,
-		parent: group,
-		engine: engine,
-	}
-	engine.groups = append(engine.groups, newGroup)
-	return newGroup
-}
-
-func (group *RouterGroup) addRoute(method string, comp string, handleFunc HandlerFunc) {
-	pattern := group.prefix + comp
-	log.Printf("Route %4s - %s", method, pattern)
-	group.engine.router.addRoute(method, pattern, handleFunc)
-}
-
-func (group *RouterGroup) GET(pattern string, handleFunc HandlerFunc) {
-	group.addRoute("GET", pattern, handleFunc)
-}
-
-func (group *RouterGroup) POST(pattern string, handleFunc HandlerFunc) {
-	group.addRoute("POST", pattern, handleFunc)
-}
-
-func (group *RouterGroup) Use(middlewares ...HandlerFunc) {
-	group.middlewares = append(group.middlewares, middlewares...)
 }

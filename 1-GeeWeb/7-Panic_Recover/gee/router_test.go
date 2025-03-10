@@ -27,7 +27,6 @@ func TestParsePattern(t *testing.T) {
 
 func TestGetRoute(t *testing.T) {
 	r := newTestRouter()
-	//t.Helper()
 	n, ps := r.getRoute("GET", "/hello/geektutu")
 
 	if n == nil {

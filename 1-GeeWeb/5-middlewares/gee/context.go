@@ -9,27 +9,26 @@ import (
 type H map[string]interface{}
 
 type Context struct {
-	//origin objects
+	// origin objects
 	Writer http.ResponseWriter
 	Req    *http.Request
-	//request info
+	// request info
 	Path   string
 	Method string
 	Params map[string]string
-	//response info
+	// response info
 	StatusCode int
-	//middleware
+	// middleware
 	handlers []HandlerFunc
 	index    int
 }
 
-// 根据原始的http请求和响应构造context
-func newContext(writer http.ResponseWriter, req *http.Request) *Context {
+func newContext(w http.ResponseWriter, req *http.Request) *Context {
 	return &Context{
-		Writer: writer,
-		Req:    req,
 		Path:   req.URL.Path,
 		Method: req.Method,
+		Req:    req,
+		Writer: w,
 		index:  -1,
 	}
 }
@@ -45,6 +44,11 @@ func (c *Context) Next() {
 func (c *Context) Fail(code int, err string) {
 	c.index = len(c.handlers)
 	c.JSON(code, H{"message": err})
+}
+
+func (c *Context) Param(key string) string {
+	value, _ := c.Params[key]
+	return value
 }
 
 func (c *Context) PostForm(key string) string {
@@ -73,9 +77,7 @@ func (c *Context) String(code int, format string, values ...interface{}) {
 func (c *Context) JSON(code int, obj interface{}) {
 	c.SetHeader("Content-Type", "application/json")
 	c.Status(code)
-	//encoder是一个c.Writer的编码器
 	encoder := json.NewEncoder(c.Writer)
-	//将obj的内容编码进c.Writer
 	if err := encoder.Encode(obj); err != nil {
 		http.Error(c.Writer, err.Error(), 500)
 	}
@@ -90,9 +92,4 @@ func (c *Context) HTML(code int, html string) {
 	c.SetHeader("Content-Type", "text/html")
 	c.Status(code)
 	c.Writer.Write([]byte(html))
-}
-
-func (c *Context) Param(key string) string {
-	value, _ := c.Params[key]
-	return value
 }
